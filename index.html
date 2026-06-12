@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/jpeg" href="favicon.jpeg">
+    <style>
+        body { margin: 0; background: #111; overflow: hidden; color: white; font-family: sans-serif; }
+        
+        #drop-zone {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            border: 4px dashed #555; padding: 50px; text-align: center; cursor: pointer;
+            z-index: 10; background: rgba(17,17,17,0.9);
+        }
+
+        /* Carpenter Layout via 3 Flexbox Columns */
+        #gallery-wrapper {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .masonry-column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            height: max-content;
+            will-change: transform;
+        }
+
+        /* Pause only the specific column being hovered */
+        .masonry-column:hover {
+            animation-play-state: paused !important;
+        }
+        
+        .masonry-column img {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 4px;
+        }
+
+        @keyframes scrollUp {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-50%); } /* Loops perfectly at the halfway point */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="drop-zone">Drag & Drop Image Folder Here</div>
+    <div id="gallery-wrapper"></div>
+
+    <script>
+        const randStr = () => Math.random().toString(36).substring(2).toUpperCase();
+	    document.title = `${randStr()}${randStr()}${randStr()}`;
+
+        const dropZone = document.getElementById('drop-zone');
+        const wrapper = document.getElementById('gallery-wrapper');
+        
+        // Changed to 3 columns
+        const COLUMNS_COUNT = 3; 
+        
+        // Adjust this number to change overall speed (higher = slower, lower = faster)
+        const PIXELS_PER_SECOND = 100; 
+
+        dropZone.addEventListener('dragover', (e) => e.preventDefault());
+        dropZone.addEventListener('drop', handleDrop);
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            dropZone.style.display = 'none';
+            const files = [];
+            
+            for (const item of e.dataTransfer.items) {
+                if (item.kind === 'file') {
+                    const entry = item.webkitGetAsEntry();
+                    if (entry.isDirectory) {
+                        await traverseFileTree(entry, files);
+                    }
+                }
+            }
+            
+            shuffleArray(files);
+            distributeImages(files);
+        }
+
+        function traverseFileTree(entry, fileList) {
+            return new Promise(resolve => {
+                if (entry.isFile) {
+                    entry.file(file => {
+                        if (file.type.startsWith('image/')) {
+                            fileList.push(URL.createObjectURL(file));
+                        }
+                        resolve();
+                    });
+                } else if (entry.isDirectory) {
+                    const reader = entry.createReader();
+                    reader.readEntries(entries => {
+                        Promise.all(entries.map(e => traverseFileTree(e, fileList))).then(resolve);
+                    });
+                }
+            });
+        }
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function distributeImages(imageUrls) {
+            if (imageUrls.length === 0) return;
+
+            const columns = Array.from({ length: COLUMNS_COUNT }, () => []);
+
+            // Distribute the original shuffled images evenly across columns
+            imageUrls.forEach((url, index) => {
+                columns[index % COLUMNS_COUNT].push(url);
+            });
+
+            // Populate columns in DOM
+            columns.forEach((colUrls, colIndex) => {
+                const col = document.createElement('div');
+                col.className = 'masonry-column';
+                
+                // Duplicate array for seamless looping
+                const loopedUrls = colUrls.concat(colUrls);
+                
+                loopedUrls.forEach(url => {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    col.appendChild(img);
+                });
+
+                wrapper.appendChild(col);
+            });
+
+            // Wait for images to load to accurately calculate column heights for uniform speed
+            window.addEventListener('load', syncColumnSpeeds);
+            // Fallback trigger if images are already cached
+            setTimeout(syncColumnSpeeds, 500);
+        }
+
+        function syncColumnSpeeds() {
+            const cols = document.querySelectorAll('.masonry-column');
+            cols.forEach(col => {
+                // Total height includes both original and duplicated sets
+                const totalHeight = col.scrollHeight; 
+                // We only scroll through half of the total height before resetting loop
+                const scrollDistance = totalHeight / 2; 
+                
+                // Calculate precise duration so every column moves at the exact same pixel speed
+                const duration = scrollDistance / PIXELS_PER_SECOND;
+                
+                col.style.animation = `scrollUp ${duration}s linear infinite`;
+            });
+        }
+    </script>
+</body>
+</html>
